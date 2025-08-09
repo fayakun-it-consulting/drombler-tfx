@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@types/node": "^24.2.1"
+  },
+  "dependencies": {
+    "java2typescript": "^1.1.0"
+  }
+}
