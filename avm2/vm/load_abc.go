@@ -7,29 +7,24 @@ import (
 	"github.com/example/go-avm2-step3/avm2/objects"
 )
 
-// LoadABC maps parsed ABC structures into VM runtime objects (ASClass, ASFunction)
 func (vm *VM) LoadABC(af *abc.ABCFile) error {
-	if af == nil {
-		return fmt.Errorf("nil ABCFile")
-	}
+	if af == nil { return fmt.Errorf("nil ABCFile") }
 	vm.ABC = af
 
-	// Create classes for each instance (using string names if available)
+	// Create classes for instances
+	vm.Classes = make([]*objects.ASClass, len(af.Instances))
 	for i, inst := range af.Instances {
 		name := vm.resolveStringIndex(inst.NameIndex)
+		if name == "" { name = fmt.Sprintf("class_%d", i) }
 		cls := &objects.ASClass{Name: name, Traits: make(map[string]*objects.Trait)}
-		// attach placeholder constructor; real constructor may be in Classes/MethodBodies
-		vm.Classes = append(vm.Classes, cls)
+		vm.Classes[i] = cls
 		vm.Globals[name] = cls
-		_ = i
 	}
 
-	// Link superclasses (best-effort)
-	for i := range af.Instances {
-		inst := af.Instances[i]
-		if inst.SuperNameIndex != 0 && int(inst.SuperNameIndex) < len(af.CP.Strings) {
+	// Link superclasses by name
+	for i, inst := range af.Instances {
+		if inst.SuperNameIndex != 0 {
 			superName := vm.resolveStringIndex(inst.SuperNameIndex)
-			// find class
 			for _, c := range vm.Classes {
 				if c.Name == superName {
 					vm.Classes[i].SuperClass = c
@@ -39,33 +34,67 @@ func (vm *VM) LoadABC(af *abc.ABCFile) error {
 		}
 	}
 
-	// Map method bodies to ASFunction objects
-	for _, mb := range af.MethodBodies {
-		fn := &objects.ASFunction{Name: fmt.Sprintf("method_%d", mb.Method), Code: mb.Code, Max: int(mb.MaxStack), Locals: int(mb.LocalCount)}
-		vm.Methods = append(vm.Methods, fn)
+	// Map method bodies to ASFunction
+	vm.Methods = make([]*objects.ASFunction, len(af.MethodBodies))
+	for i, mb := range af.MethodBodies {
+		fn := &objects.ASFunction{
+			Name: fmt.Sprintf("method_%d", mb.Method),
+			Code: mb.Code,
+			Max:  int(mb.MaxStack),
+			Locals: int(mb.LocalCount),
+		}
+		vm.Methods[i] = fn
 	}
 
-	// Attach methods to traits based on TraitInfo in instances & classes
-	for idx, inst := range af.Instances {
+	// Attach traits from instances (instance-side)
+	for ci, inst := range af.Instances {
+		cls := vm.Classes[ci]
 		for _, tr := range inst.Traits {
 			name := vm.resolveStringIndex(tr.NameIndex)
-			if tr.Tag == abc.Trait_Method || tr.Tag == abc.Trait_Getter || tr.Tag == abc.Trait_Setter {
-				methodIdx := tr.Method
-				// find function by Method index
+			switch tr.Tag {
+			case abc.Trait_Method, abc.Trait_Getter, abc.Trait_Setter:
+				// find method body by index
 				var fn *objects.ASFunction
-				for _, f := range vm.Methods {
-					// compare by name pattern "method_X" where X==methodIdx
-					if f.Name == fmt.Sprintf("method_%d", methodIdx) {
-						fn = f; break
+				for _, m := range vm.Methods {
+					// method index stored in Trait.Method refers to method_info index; match by name pattern
+					if m.Name == fmt.Sprintf("method_%d", tr.Method) {
+						fn = m; break
 					}
 				}
-				if fn != nil && idx < len(vm.Classes) {
-					vm.Classes[idx].Traits[name] = &objects.Trait{Name: name, Type: objects.Trait_Method, Method: fn}
+				if fn != nil {
+					cls.Traits[name] = &objects.Trait{Name: name, Type: objects.Trait_Method, Method: fn}
 				}
-			} else if tr.Tag == abc.Trait_Slot {
-				// default slot handling
-				if idx < len(vm.Classes) {
-					vm.Classes[idx].Traits[name] = &objects.Trait{Name: name, Type: objects.Trait_Slot, SlotID: int(tr.SlotID)}
+			case abc.Trait_Slot:
+				cls.Traits[name] = &objects.Trait{Name: name, Type: objects.Trait_Slot, SlotID: int(tr.SlotID)}
+			default:
+				// ignore other trait types for now
+			}
+		}
+	}
+
+	// Attach traits from class side (static)
+	for ci, cl := range af.Classes {
+		cls := vm.Classes[ci]
+		for _, tr := range cl.Traits {
+			name := vm.resolveStringIndex(tr.NameIndex)
+			switch tr.Tag {
+			case abc.Trait_Method:
+				var fn *objects.ASFunction
+				for _, m := range vm.Methods {
+					if m.Name == fmt.Sprintf("method_%d", tr.Method) {
+						fn = m; break
+					}
+				}
+				if fn != nil {
+					cls.Traits[name] = &objects.Trait{Name: name, Type: objects.Trait_Method, Method: fn}
+				}
+			case abc.Trait_Class:
+				// class slot: attach referenced class
+				if int(tr.ClassIndex) < len(vm.Classes) {
+					ref := vm.Classes[tr.ClassIndex]
+					cls.Traits[name] = &objects.Trait{Name: name, Type: objects.Trait_Class}
+					// store class as property on Globals too
+					vm.Globals[ref.Name] = ref
 				}
 			}
 		}

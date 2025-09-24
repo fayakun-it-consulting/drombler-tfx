@@ -1,3 +1,2 @@
 package swf
-
-// SWF extractor placeholder (DoABC extraction implemented in later steps)
+// Minimal SWF DoABC extractor is implemented in later steps.

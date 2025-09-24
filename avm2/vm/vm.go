@@ -1,6 +1,8 @@
 package vm
 
 import (
+	"fmt"
+
 	"github.com/example/go-avm2-step3/avm2/abc"
 	"github.com/example/go-avm2-step3/avm2/objects"
 )
@@ -24,14 +26,4 @@ func (vm *VM) resolveStringIndex(idx uint32) string {
 		return vm.ABC.CP.Strings[idx]
 	}
 	return ""
-}
-
-// CallFunction executes an ASFunction; supports Native funcs; bytecode execution not implemented yet.
-func (vm *VM) CallFunction(fn *objects.ASFunction, args ...objects.Value) objects.Value {
-	if fn == nil { return nil }
-	if fn.Native != nil {
-		return fn.Native(vm, nil, args...)
-	}
-	// Bytecode execution is not implemented in this step.
-	return nil
 }
