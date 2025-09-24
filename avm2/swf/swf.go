@@ -1,3 +1,3 @@
 package swf
 
-// Placeholder for SWF parsing (to extract embedded ABC files)
+// SWF extractor placeholder (DoABC extraction implemented in later steps)

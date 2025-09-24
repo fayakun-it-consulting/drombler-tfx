@@ -1,27 +1,72 @@
 package objects
 
-type ASObject struct {
-    Properties map[string]interface{}
+type Value interface{}
+
+type NamespaceKind int
+
+const (
+	NS_Public NamespaceKind = iota
+	NS_Private
+	NS_Protected
+	NS_Explicit
+)
+
+type Namespace struct {
+	Name string
+	Kind NamespaceKind
 }
 
-type ASClass struct {
-    Name    string
-    Methods map[string]*ASFunction
+type TraitType int
+
+const (
+	Trait_Slot TraitType = iota
+	Trait_Method
+	Trait_Getter
+	Trait_Setter
+	Trait_Class
+)
+
+type Trait struct {
+	Name      string
+	Namespace *Namespace
+	Type      TraitType
+	Method    *ASFunction
+	SlotID    int
 }
 
 type ASFunction struct {
-    Name string
-    Code func([]interface{}) interface{}
+	Name   string
+	Code   []byte
+	Max    int
+	Locals int
+	Scope  []*ASObject
+	Native func(vm interface{}, this *ASObject, args ...Value) Value
 }
 
-func NewASObject() *ASObject {
-    return &ASObject{Properties: make(map[string]interface{})}
+type ASClass struct {
+	Name        string
+	SuperClass  *ASClass
+	Traits      map[string]*Trait
+	Constructor *ASFunction
 }
 
-func NewASClass(name string) *ASClass {
-    return &ASClass{Name: name, Methods: make(map[string]*ASFunction)}
+type ASObject struct {
+	Traits    map[string]Value
+	Prototype *ASObject
+	Class     *ASClass
 }
 
-func NewASFunction(name string, code func([]interface{}) interface{}) *ASFunction {
-    return &ASFunction{Name: name, Code: code}
+func NewObject(class *ASClass) *ASObject {
+	var proto *ASObject
+	if class != nil && class.SuperClass != nil {
+		proto = NewObject(class.SuperClass)
+	}
+	return &ASObject{Traits: make(map[string]Value), Prototype: proto, Class: class}
+}
+
+func (o *ASObject) SetProperty(name string, v Value) { o.Traits[name] = v }
+func (o *ASObject) GetProperty(name string) (Value, bool) {
+	if v, ok := o.Traits[name]; ok { return v, true }
+	if o.Prototype != nil { return o.Prototype.GetProperty(name) }
+	return nil, false
 }
